@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>NOX — Bashstore Support</title>
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --wa-teal-dark: #075E54;
+      --wa-teal: #128C7E;
+      --wa-green: #25D366;
+      --wa-green-hover: #1ebe5d;
+      --wa-light-green: #DCF8C6;
+      --wa-chat-bg: #ECE5DD;
+      --wa-white: #FFFFFF;
+      --wa-incoming-bg: #FFFFFF;
+      --wa-outgoing-bg: #DCF8C6;
+      --wa-text-primary: #111B21;
+      --wa-text-secondary: #667781;
+      --wa-timestamp: #667781;
+      --wa-tick: #53bdeb;
+      --wa-border: #e0dcd7;
+      --wa-input-bg: #FFFFFF;
+      --wa-header-text: #FFFFFF;
+      --wa-header-subtitle: rgba(255,255,255,0.7);
+      --wa-shadow: rgba(0,0,0,0.08);
+      --wa-radius: 8px;
+      --wa-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --wa-handoff-bg: #FFF8E1;
+      --wa-handoff-border: #F9A825;
+    }
+
+    body {
+      font-family: var(--wa-font);
+      background: #DAD3CC;
+      color: var(--wa-text-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 16px;
+    }
+
+    /* ── Widget Container ── */
+    .nox-widget {
+      width: 100%;
+      max-width: 420px;
+      height: 85vh;
+      max-height: 780px;
+      display: flex;
+      flex-direction: column;
+      background: var(--wa-chat-bg);
+      border-radius: var(--wa-radius);
+      overflow: hidden;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.15);
+      position: relative;
+    }
+
+    /* ── Header ── */
+    .nox-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 6px 10px 16px;
+      background: var(--wa-teal-dark);
+      flex-shrink: 0;
+      min-height: 56px;
+    }
+
+    .nox-header-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 16px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    .nox-header-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .nox-header-title {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--wa-header-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .nox-header-status {
+      font-size: 13px;
+      color: var(--wa-header-subtitle);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 1px;
+    }
+
+    .nox-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--wa-green);
+      box-shadow: 0 0 0 2px rgba(37, 211, 102, 0.3);
+    }
+
+    /* ── Header action button (new chat) ── */
+    .nox-header-action {
+      background: transparent;
+      border: none;
+      color: rgba(255,255,255,0.85);
+      cursor: pointer;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    .nox-header-action:hover {
+      background: rgba(255,255,255,0.15);
+    }
+    .nox-header-action svg {
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
+    }
+
+    /* ── Overflow menu wrapper ── */
+    .nox-overflow-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .nox-overflow-btn {
+      background: transparent;
+      border: none;
+      color: rgba(255,255,255,0.85);
+      cursor: pointer;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    .nox-overflow-btn:hover {
+      background: rgba(255,255,255,0.15);
+    }
+    .nox-overflow-btn svg {
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
+    }
+
+    .nox-overflow-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      background: var(--wa-white);
+      border-radius: 6px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+      min-width: 160px;
+      z-index: 100;
+      overflow: hidden;
+    }
+    .nox-overflow-menu.open {
+      display: block;
+    }
+
+    .nox-overflow-item {
+      display: block;
+      width: 100%;
+      padding: 12px 24px;
+      border: none;
+      background: transparent;
+      color: var(--wa-text-primary);
+      font-size: 14.5px;
+      text-align: left;
+      cursor: pointer;
+      font-family: var(--wa-font);
+    }
+    .nox-overflow-item:hover {
+      background: #f5f5f5;
+    }
+
+    /* ── Messages Area ── */
+    .nox-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      scroll-behavior: smooth;
+      background-color: var(--wa-chat-bg);
+    }
+
+    .nox-messages::-webkit-scrollbar { width: 5px; }
+    .nox-messages::-webkit-scrollbar-track { background: transparent; }
+    .nox-messages::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
+
+    /* ── Message Bubbles ── */
+    .nox-msg {
+      max-width: 80%;
+      padding: 6px 8px 2px;
+      border-radius: 8px;
+      font-size: 14.2px;
+      line-height: 1.45;
+      word-wrap: break-word;
+      animation: nox-fade-in 0.15s ease;
+      position: relative;
+      box-shadow: 0 1px 1px var(--wa-shadow);
+    }
+
+    @keyframes nox-fade-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .nox-msg-user {
+      align-self: flex-end;
+      background: var(--wa-outgoing-bg);
+      color: var(--wa-text-primary);
+      border-top-right-radius: 0;
+      margin-left: 48px;
+    }
+
+    .nox-msg-bot {
+      align-self: flex-start;
+      background: var(--wa-incoming-bg);
+      color: var(--wa-text-primary);
+      border-top-left-radius: 0;
+      margin-right: 48px;
+    }
+
+    .nox-msg-content {
+      padding-bottom: 0;
+    }
+
+    /* Timestamp + ticks row */
+    .nox-msg-meta {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 3px;
+      margin-top: 1px;
+      padding-bottom: 3px;
+    }
+
+    .nox-msg-time {
+      font-size: 11px;
+      color: var(--wa-timestamp);
+      line-height: 1;
+    }
+
+    .nox-msg-ticks {
+      display: inline-flex;
+      align-items: center;
+    }
+    .nox-msg-ticks svg {
+      width: 16px;
+      height: 11px;
+      color: var(--wa-tick);
+    }
+
+    .nox-msg-bot p { margin-bottom: 6px; }
+    .nox-msg-bot p:last-child { margin-bottom: 0; }
+
+    .nox-msg-bot ol, .nox-msg-bot ul {
+      padding-left: 20px;
+      margin-bottom: 6px;
+    }
+    .nox-msg-bot li { margin-bottom: 3px; }
+
+    .nox-msg-bot strong { color: var(--wa-text-primary); font-weight: 600; }
+
+    .nox-msg-bot code {
+      background: rgba(0,0,0,0.06);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 13px;
+    }
+
+    /* ── Typing Indicator ── */
+    .nox-typing {
+      align-self: flex-start;
+      display: none;
+      align-items: center;
+      gap: 5px;
+      padding: 10px 14px;
+      background: var(--wa-incoming-bg);
+      border-radius: 8px;
+      border-top-left-radius: 0;
+      box-shadow: 0 1px 1px var(--wa-shadow);
+    }
+
+    .nox-typing.visible { display: flex; }
+
+    .nox-typing-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--wa-text-secondary);
+      animation: nox-bounce 1.2s ease-in-out infinite;
+    }
+    .nox-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+    .nox-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes nox-bounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-4px); opacity: 1; }
+    }
+
+    /* ── Handoff Card ── */
+    .nox-handoff-card {
+      align-self: stretch;
+      background: var(--wa-handoff-bg);
+      border: 1px solid var(--wa-handoff-border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      animation: nox-fade-in 0.3s ease;
+      box-shadow: 0 1px 2px var(--wa-shadow);
+    }
+
+    .nox-handoff-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .nox-handoff-card-icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .nox-handoff-card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #E65100;
+    }
+
+    .nox-handoff-card-body {
+      font-size: 13px;
+      color: var(--wa-text-secondary);
+      line-height: 1.5;
+    }
+
+    .nox-handoff-ref {
+      display: inline-block;
+      margin-top: 6px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      color: #E65100;
+      background: rgba(230, 81, 0, 0.08);
+      padding: 4px 10px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Input Area ── */
+    .nox-input-area {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding: 6px 8px;
+      background: #f0f0f0;
+      flex-shrink: 0;
+    }
+
+    .nox-input-area.disabled { opacity: 0.5; pointer-events: none; }
+
+    .nox-input {
+      flex: 1;
+      background: var(--wa-input-bg);
+      border: none;
+      border-radius: 21px;
+      padding: 9px 16px;
+      color: var(--wa-text-primary);
+      font-family: var(--wa-font);
+      font-size: 15px;
+      outline: none;
+      resize: none;
+      min-height: 42px;
+      max-height: 100px;
+      box-shadow: 0 1px 1px rgba(0,0,0,0.06);
+      transition: box-shadow 0.15s;
+    }
+
+    .nox-input:focus { box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .nox-input::placeholder { color: var(--wa-text-secondary); }
+
+    .nox-send-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--wa-green);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .nox-send-btn:hover { background: var(--wa-green-hover); }
+    .nox-send-btn:active { transform: scale(0.95); }
+    .nox-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .nox-send-btn svg { width: 20px; height: 20px; }
+
+    /* ── Error Toast ── */
+    .nox-error {
+      align-self: stretch;
+      background: #FFF0F0;
+      border: 1px solid #FFCDD2;
+      color: #C62828;
+      font-size: 13px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      animation: nox-fade-in 0.2s ease;
+    }
+
+    /* ── Welcome Message ── */
+    .nox-welcome {
+      text-align: center;
+      padding: 40px 20px 20px;
+      color: var(--wa-text-secondary);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .nox-welcome-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: var(--wa-teal-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 24px;
+      color: #fff;
+      margin: 0 auto 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    /* ── Responsive: Full-screen on mobile ── */
+    @media (max-width: 480px) {
+      body {
+        padding: 0;
+        background: var(--wa-chat-bg);
+      }
+      .nox-widget {
+        max-width: 100%;
+        width: 100%;
+        height: 100vh;
+        height: 100dvh;
+        border-radius: 0;
+        border: none;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="nox-widget" id="noxWidget">
+    <!-- Header -->
+    <div class="nox-header">
+      <div class="nox-header-icon">N</div>
+      <div class="nox-header-info">
+        <div class="nox-header-title">NOX &mdash; Bashstore Support</div>
+        <div class="nox-header-status">
+          <span class="nox-status-dot"></span>
+          online
+        </div>
+      </div>
+      <button class="nox-header-action" id="newSessionBtn" title="New chat" aria-label="New chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+      </button>
+      <div class="nox-overflow-wrap">
+        <button class="nox-overflow-btn" id="overflowBtn" title="More options" aria-label="More options">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+        </button>
+        <div class="nox-overflow-menu" id="overflowMenu">
+          <button class="nox-overflow-item" id="menuNewChat">New chat</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div class="nox-messages" id="messages">
+      <div class="nox-welcome" id="welcome">
+        <div class="nox-welcome-icon">N</div>
+        <div><strong style="color: var(--wa-text-primary);">NOX</strong></div>
+        <div style="margin-top: 4px;">Bashstore Support assistant.<br>How can I help you today?</div>
+      </div>
+    </div>
+
+    <!-- Typing indicator -->
+    <div style="padding: 0 16px 4px; background: var(--wa-chat-bg); flex-shrink: 0;">
+      <div class="nox-typing" id="typing">
+        <div class="nox-typing-dot"></div>
+        <div class="nox-typing-dot"></div>
+        <div class="nox-typing-dot"></div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="nox-input-area" id="inputArea">
+      <textarea
+        class="nox-input"
+        id="messageInput"
+        placeholder="Type a message"
+        rows="1"
+      ></textarea>
+      <button class="nox-send-btn" id="sendBtn" disabled aria-label="Send message">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      // ── Config ──
+      const API_BASE = window.NOX_API_BASE || `${location.protocol}//${location.hostname}:${location.port || 3456}`;
+      const STORAGE_KEY = 'nox_session';
+
+      // ── DOM refs ──
+      const messagesEl = document.getElementById('messages');
+      const welcomeEl = document.getElementById('welcome');
+      const typingEl = document.getElementById('typing');
+      const inputEl = document.getElementById('messageInput');
+      const sendBtn = document.getElementById('sendBtn');
+      const newBtn = document.getElementById('newSessionBtn');
+      const menuNewChat = document.getElementById('menuNewChat');
+      const inputArea = document.getElementById('inputArea');
+      const overflowBtn = document.getElementById('overflowBtn');
+      const overflowMenu = document.getElementById('overflowMenu');
+
+      // ── State ──
+      let sessionId = null;
+      let isHandedOff = false;
+      let isSending = false;
+
+      // ── Overflow menu ──
+      overflowBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        overflowMenu.classList.toggle('open');
+      });
+
+      document.addEventListener('click', () => {
+        overflowMenu.classList.remove('open');
+      });
+
+      // ── Time helper ──
+      function getTimeString() {
+        return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+
+      // ── Double-tick SVG (WhatsApp-style) ──
+      const DOUBLE_TICK_SVG = '<svg viewBox="0 0 16 11" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11.071.653a.457.457 0 0 0-.304.149L6.425 6.305 4.908 4.607a.456.456 0 0 0-.637-.058.398.398 0 0 0-.059.614L5.96 7.153a.456.456 0 0 0 .345.136.456.456 0 0 0 .332-.169l4.694-5.935a.396.396 0 0 0-.086-.554.456.456 0 0 0-.174.022z" fill="currentColor"/><path d="M14.757.653a.457.457 0 0 0-.305.149l-4.341 5.503-.586-.697a.384.384 0 0 0-.124.474l.95 1.13a.456.456 0 0 0 .345.136.456.456 0 0 0 .332-.169l4.694-5.935a.396.396 0 0 0-.086-.554.456.456 0 0 0-.174.022z" fill="currentColor"/></svg>';
+
+      // ── Session persistence ──
+      function saveSession() {
+        if (sessionId) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            sessionId,
+            isHandedOff,
+            timestamp: Date.now(),
+          }));
+        }
+      }
+
+      function loadSession() {
+        try {
+          const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+          if (data && data.sessionId) {
+            if (Date.now() - data.timestamp > 24 * 60 * 60 * 1000) {
+              localStorage.removeItem(STORAGE_KEY);
+              return null;
+            }
+            return data;
+          }
+        } catch (e) { /* ignore */ }
+        return null;
+      }
+
+      function clearSession() {
+        sessionId = null;
+        isHandedOff = false;
+        localStorage.removeItem(STORAGE_KEY);
+      }
+
+      // ── Rendering ──
+      function scrollToBottom() {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function hideWelcome() {
+        if (welcomeEl) welcomeEl.style.display = 'none';
+      }
+
+      function addMessage(role, content, time) {
+        hideWelcome();
+        const isUser = role === 'user';
+        const div = document.createElement('div');
+        div.className = 'nox-msg nox-msg-' + (isUser ? 'user' : 'bot');
+
+        const timeStr = time || getTimeString();
+        const ticksHtml = isUser ? '<span class="nox-msg-ticks">' + DOUBLE_TICK_SVG + '</span>' : '';
+
+        div.innerHTML =
+          '<div class="nox-msg-content">' + formatMessage(content) + '</div>' +
+          '<div class="nox-msg-meta">' +
+            '<span class="nox-msg-time">' + timeStr + '</span>' +
+            ticksHtml +
+          '</div>';
+
+        messagesEl.appendChild(div);
+        scrollToBottom();
+      }
+
+      function addHandoffCard(handoff) {
+        hideWelcome();
+        const div = document.createElement('div');
+        div.className = 'nox-handoff-card';
+        div.innerHTML =
+          '<div class="nox-handoff-card-header">' +
+            '<span class="nox-handoff-card-icon">&#9888;&#65039;</span>' +
+            '<span class="nox-handoff-card-title">Handed over to Bashstore Support</span>' +
+          '</div>' +
+          '<div class="nox-handoff-card-body">' +
+            (handoff.message || 'This conversation has been handed over to the support team.') +
+          '</div>' +
+          '<div class="nox-handoff-ref">' + (handoff.reference || '') + '</div>';
+        messagesEl.appendChild(div);
+        scrollToBottom();
+      }
+
+      function addError(msg) {
+        const div = document.createElement('div');
+        div.className = 'nox-error';
+        div.textContent = msg;
+        messagesEl.appendChild(div);
+        scrollToBottom();
+        setTimeout(() => div.remove(), 6000);
+      }
+
+      function showTyping() { typingEl.classList.add('visible'); scrollToBottom(); }
+      function hideTyping() { typingEl.classList.remove('visible'); }
+
+      function setInputDisabled(disabled) {
+        if (disabled) {
+          inputArea.classList.add('disabled');
+        } else {
+          inputArea.classList.remove('disabled');
+        }
+      }
+
+      // ── Markdown-lite formatting ──
+      function formatMessage(text) {
+        if (!text) return '';
+        let html = escapeHtml(text);
+
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        html = html.replace(/(^|\n)(\d+\.\s+.+(?:\n\d+\.\s+.+)*)/g, function(match, prefix) {
+          var items = match.trim().replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+          return prefix + '<ol>' + items + '</ol>';
+        });
+
+        html = html.replace(/(^|\n)([-\u2022]\s+.+(?:\n[-\u2022]\s+.+)*)/g, function(match, prefix) {
+          var items = match.trim().replace(/^[-\u2022]\s+(.+)$/gm, '<li>$1</li>');
+          return prefix + '<ul>' + items + '</ul>';
+        });
+
+        html = html.replace(/\n\n/g, '</p><p>');
+        html = '<p>' + html + '</p>';
+        html = html.replace(/\n/g, '<br>');
+        html = html.replace(/<p>\s*<\/p>/g, '');
+
+        return html;
+      }
+
+      function escapeHtml(str) {
+        var d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+      }
+
+      // ── API ──
+      async function sendMessage(text) {
+        if (isSending || isHandedOff || !text.trim()) return;
+
+        isSending = true;
+        sendBtn.disabled = true;
+        addMessage('user', text);
+        inputEl.value = '';
+        autoResize();
+        showTyping();
+
+        try {
+          const body = { message: text.trim() };
+          if (sessionId) body.session_id = sessionId;
+
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 60000);
+
+          const res = await fetch(API_BASE + '/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeout);
+          hideTyping();
+
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Request failed (' + res.status + ')');
+          }
+
+          const data = await res.json();
+
+          if (data.session_id) sessionId = data.session_id;
+          if (data.reply) addMessage('bot', data.reply);
+
+          if (data.handoff) {
+            isHandedOff = true;
+            addHandoffCard(data.handoff);
+            setInputDisabled(true);
+          }
+
+          saveSession();
+        } catch (err) {
+          hideTyping();
+          if (err.name === 'AbortError') {
+            addError('Request timed out. Please try again.');
+          } else if (err instanceof TypeError && err.message.includes('fetch')) {
+            addError('Unable to connect to the server. Please check your connection.');
+          } else {
+            addError(err.message || 'Something went wrong. Please try again.');
+          }
+        } finally {
+          isSending = false;
+          updateSendButton();
+        }
+      }
+
+      // ── Restore session ──
+      async function restoreSession() {
+        const saved = loadSession();
+        if (!saved) return;
+
+        sessionId = saved.sessionId;
+        isHandedOff = saved.isHandedOff;
+
+        try {
+          const res = await fetch(API_BASE + '/api/chat/' + sessionId);
+          if (!res.ok) { clearSession(); return; }
+
+          const session = await res.json();
+          hideWelcome();
+
+          if (session.messages && session.messages.length > 0) {
+            for (const msg of session.messages) {
+              if (msg.role === 'user' || msg.role === 'assistant') {
+                const msgTime = msg.created_at
+                  ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : null;
+                addMessage(msg.role === 'user' ? 'user' : 'bot', msg.content, msgTime);
+              }
+            }
+          }
+
+          if (session.status === 'handed_off') {
+            isHandedOff = true;
+            setInputDisabled(true);
+          }
+        } catch (e) {
+          clearSession();
+        }
+      }
+
+      // ── New session ──
+      async function startNewSession() {
+        overflowMenu.classList.remove('open');
+        if (sessionId) {
+          try { await fetch(API_BASE + '/api/chat/' + sessionId + '/close', { method: 'POST' }); } catch (e) { /* ignore */ }
+        }
+        clearSession();
+        messagesEl.innerHTML = '';
+        welcomeEl.style.display = '';
+        messagesEl.appendChild(welcomeEl);
+        setInputDisabled(false);
+        inputEl.focus();
+      }
+
+      // ── Input handling ──
+      function autoResize() {
+        inputEl.style.height = 'auto';
+        inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + 'px';
+      }
+
+      function updateSendButton() {
+        sendBtn.disabled = !inputEl.value.trim() || isSending || isHandedOff;
+      }
+
+      inputEl.addEventListener('input', () => { autoResize(); updateSendButton(); });
+
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (!sendBtn.disabled) sendMessage(inputEl.value);
+        }
+      });
+
+      sendBtn.addEventListener('click', () => { sendMessage(inputEl.value); });
+      newBtn.addEventListener('click', startNewSession);
+      menuNewChat.addEventListener('click', startNewSession);
+
+      // ── Init ──
+      restoreSession();
+      inputEl.focus();
+    })();
+  </script>
+</body>
+</html>

@@ -542,7 +542,7 @@
   <script>
     (() => {
       // ── Config ──
-      const API_BASE = window.NOX_API_BASE || `${location.protocol}//${location.hostname}:${location.port || 3456}`;
+      const API_BASE = window.NOX_API_BASE || location.origin;
       const STORAGE_KEY = 'nox_session';
 
       // ── DOM refs ──

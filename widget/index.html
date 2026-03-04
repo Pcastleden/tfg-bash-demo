@@ -562,6 +562,57 @@
       let isHandedOff = false;
       let isSending = false;
 
+      // ── Inactivity timeout ──
+      const INACTIVITY_WARN_MS = 2 * 60 * 1000;   // 2 minutes
+      const INACTIVITY_CLOSE_MS = 1 * 60 * 1000;   // 1 minute after warning
+      let inactivityTimer = null;
+      let timeoutTimer = null;
+
+      function resetInactivityTimer() {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (!sessionId || isHandedOff) return;
+        inactivityTimer = setTimeout(() => {
+          showInactivityWarning();
+          timeoutTimer = setTimeout(handleInactivityTimeout, INACTIVITY_CLOSE_MS);
+        }, INACTIVITY_WARN_MS);
+      }
+
+      function clearInactivityTimers() {
+        if (inactivityTimer) { clearTimeout(inactivityTimer); inactivityTimer = null; }
+        if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null; }
+      }
+
+      function showInactivityWarning() {
+        const div = document.createElement('div');
+        div.className = 'nox-error';
+        div.style.background = '#FFF8E1';
+        div.style.borderColor = '#F9A825';
+        div.style.color = '#E65100';
+        div.textContent = 'This chat will automatically end in 1 minute due to inactivity.';
+        messagesEl.appendChild(div);
+        scrollToBottom();
+      }
+
+      async function handleInactivityTimeout() {
+        clearInactivityTimers();
+        if (sessionId) {
+          try {
+            await fetch(API_BASE + '/api/chat/' + sessionId + '/close', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reason: 'timeout' }),
+            });
+          } catch (e) { /* ignore */ }
+        }
+        clearSession();
+        messagesEl.innerHTML = '';
+        welcomeEl.style.display = '';
+        messagesEl.appendChild(welcomeEl);
+        setInputDisabled(false);
+        inputEl.focus();
+      }
+
       // ── Overflow menu ──
       overflowBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -755,6 +806,7 @@
           }
 
           saveSession();
+          resetInactivityTimer();
         } catch (err) {
           hideTyping();
           if (err.name === 'AbortError') {
@@ -783,6 +835,13 @@
           if (!res.ok) { clearSession(); return; }
 
           const session = await res.json();
+
+          // If session is already closed, start fresh
+          if (session.status === 'completed' || session.status === 'abandoned') {
+            clearSession();
+            return;
+          }
+
           hideWelcome();
 
           if (session.messages && session.messages.length > 0) {
@@ -799,6 +858,8 @@
           if (session.status === 'handed_off') {
             isHandedOff = true;
             setInputDisabled(true);
+          } else {
+            resetInactivityTimer();
           }
         } catch (e) {
           clearSession();
@@ -807,9 +868,16 @@
 
       // ── New session ──
       async function startNewSession() {
+        clearInactivityTimers();
         overflowMenu.classList.remove('open');
         if (sessionId) {
-          try { await fetch(API_BASE + '/api/chat/' + sessionId + '/close', { method: 'POST' }); } catch (e) { /* ignore */ }
+          try {
+            await fetch(API_BASE + '/api/chat/' + sessionId + '/close', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reason: 'user_closed' }),
+            });
+          } catch (e) { /* ignore */ }
         }
         clearSession();
         messagesEl.innerHTML = '';
@@ -841,6 +909,14 @@
       sendBtn.addEventListener('click', () => { sendMessage(inputEl.value); });
       newBtn.addEventListener('click', startNewSession);
       menuNewChat.addEventListener('click', startNewSession);
+
+      // ── Page close detection ──
+      window.addEventListener('beforeunload', () => {
+        if (!sessionId) return;
+        const blob = new Blob([JSON.stringify({ reason: 'page_closed' })], { type: 'application/json' });
+        navigator.sendBeacon(API_BASE + '/api/chat/' + sessionId + '/close', blob);
+        clearSession();
+      });
 
       // ── Init ──
       restoreSession();

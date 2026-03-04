@@ -75,7 +75,8 @@ router.post('/', async (req, res) => {
 
 /**
  * POST /api/chat/:session_id/close
- * Marks a session as completed (used when user clicks "New chat").
+ * Marks a session as completed or abandoned.
+ * Body (optional): { reason: 'user_closed' | 'timeout' | 'page_closed' }
  */
 router.post('/:session_id/close', (req, res) => {
   try {
@@ -83,7 +84,11 @@ router.post('/:session_id/close', (req, res) => {
     const session = getSession(req.params.session_id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
     if (session.status === 'active') {
-      setSessionStatus(req.params.session_id, 'completed');
+      const reason = req.body?.reason;
+      const status = (reason === 'timeout' || reason === 'page_closed')
+        ? 'abandoned'
+        : 'completed';
+      setSessionStatus(req.params.session_id, status);
     }
     res.json({ ok: true });
   } catch (err) {

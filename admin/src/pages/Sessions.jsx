@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import PageHeader from '../components/PageHeader';
 import { getSessions, getSession, deleteSession } from '../lib/api';
 
@@ -54,20 +54,41 @@ export default function Sessions() {
   const [loadingTranscript, setLoadingTranscript] = useState(false);
   const limit = 20;
 
-  const load = () => {
-    setLoading(true);
+  const transcriptIdRef = useRef(null);
+
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
     const params = { limit, offset: page * limit };
     if (statusFilter) params.status = statusFilter;
     getSessions(params)
       .then(data => { setSessions(data.sessions); setTotal(data.total); })
       .catch(console.error)
-      .finally(() => setLoading(false));
-  };
+      .finally(() => { if (!silent) setLoading(false); });
+  }, [statusFilter, page]);
 
-  useEffect(() => { load(); }, [statusFilter, page]);
+  useEffect(() => { load(); }, [load]);
+
+  // Auto-refresh every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      load(true);
+      // Also refresh open transcript
+      if (transcriptIdRef.current) {
+        getSession(transcriptIdRef.current).then(setTranscript).catch(() => {});
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [load]);
+
+  const closeTranscript = () => {
+    setSelectedSession(null);
+    setTranscript(null);
+    transcriptIdRef.current = null;
+  };
 
   const handleViewSession = async (session) => {
     setSelectedSession(session);
+    transcriptIdRef.current = session.id;
     setLoadingTranscript(true);
     try {
       const data = await getSession(session.id);
@@ -85,8 +106,7 @@ export default function Sessions() {
     try {
       await deleteSession(sessionId);
       if (selectedSession?.id === sessionId) {
-        setSelectedSession(null);
-        setTranscript(null);
+        closeTranscript();
       }
       load();
     } catch (err) {
@@ -186,7 +206,7 @@ export default function Sessions() {
 
       {/* Transcript Slide-out */}
       {selectedSession && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end" onClick={() => setSelectedSession(null)}>
+        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end" onClick={closeTranscript}>
           <div
             className="w-full max-w-xl bg-nox-surface border-l border-nox-border h-full overflow-hidden flex flex-col"
             onClick={e => e.stopPropagation()}
@@ -197,7 +217,7 @@ export default function Sessions() {
                 <h2 className="text-sm font-semibold text-nox-text">Session Transcript</h2>
                 <p className="text-[11px] text-nox-text-muted font-mono mt-0.5">{selectedSession.id}</p>
               </div>
-              <button onClick={() => setSelectedSession(null)} className="text-nox-text-muted hover:text-nox-text">
+              <button onClick={closeTranscript} className="text-nox-text-muted hover:text-nox-text">
                 <XIcon className="w-4 h-4" />
               </button>
             </div>

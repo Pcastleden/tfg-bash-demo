@@ -104,6 +104,24 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* Agent Routing Stats */}
+      {(stats?.agentRoutingStats || []).length > 0 && (
+        <div className="bg-nox-surface border border-nox-border rounded-xl p-5 mb-6">
+          <h2 className="text-sm font-medium text-nox-text mb-4">Agent Activity (Swarm)</h2>
+          <div className="flex flex-wrap gap-3">
+            {(stats?.agentRoutingStats || []).map((a, i) => (
+              <div key={i} className="bg-nox-bg rounded-lg px-4 py-3 min-w-[140px]">
+                <div className="text-[11px] font-mono text-nox-text-muted mb-1">
+                  {a.agent === 'orchestrator' ? 'Orchestrator' : a.agent}
+                </div>
+                <div className="text-lg font-semibold text-nox-text">{a.count}</div>
+                <div className="text-[10px] text-nox-text-muted">messages</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Recent sessions table */}
       {(stats?.recentSessions || []).length > 0 && (
         <div className="bg-nox-surface border border-nox-border rounded-xl overflow-hidden mb-6">
@@ -122,6 +140,7 @@ export default function Dashboard() {
                 <tr className="border-b border-nox-border">
                   <th className="text-left px-4 py-2 text-xs font-medium text-nox-text-muted">Time</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-nox-text-muted">Status</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-nox-text-muted">Agent</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-nox-text-muted">Scenario</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-nox-text-muted">Store</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-nox-text-muted">Messages</th>
@@ -132,6 +151,7 @@ export default function Dashboard() {
                   <tr key={s.id} onClick={() => navigate('/sessions')} className="border-b border-nox-border/50 cursor-pointer hover:bg-nox-surface-2/50 transition-colors">
                     <td className="px-4 py-2 text-nox-text-muted text-xs whitespace-nowrap">{formatTime(s.created_at)}</td>
                     <td className="px-4 py-2"><StatusBadge status={s.status} /></td>
+                    <td className="px-4 py-2 text-xs font-mono text-indigo-400">{s.active_agent === 'orchestrator' ? 'Orch' : s.active_agent || '—'}</td>
                     <td className="px-4 py-2 text-nox-text text-xs">{s.detected_scenario || '—'}</td>
                     <td className="px-4 py-2 text-nox-text text-xs">{s.store_name || '—'}</td>
                     <td className="px-4 py-2 text-nox-text-muted text-xs">{s.message_count}</td>

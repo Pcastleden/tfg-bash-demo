@@ -117,3 +117,17 @@ CREATE TABLE IF NOT EXISTS handoffs (
   priority TEXT DEFAULT 'normal',
   created_at DATETIME DEFAULT (datetime('now', '+2 hours'))
 );
+
+-- SOP-specific tools (swarm architecture)
+CREATE TABLE IF NOT EXISTS sop_tools (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scenario_id INTEGER NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+  tool_name TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  tool_type TEXT NOT NULL CHECK(tool_type IN ('api_call', 'database_query', 'mock', 'indexify')),
+  configuration TEXT NOT NULL,
+  input_schema TEXT NOT NULL,
+  enabled INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT (datetime('now', '+2 hours'))
+);

@@ -143,4 +143,123 @@ async function chat(messages, handlers = {}, options = {}) {
   }
 }
 
-module.exports = { chat };
+/**
+ * Lower-level agent chat — accepts explicit systemPrompt, tools, and toolHandlers.
+ * Used by Orchestrator and SOPAgent in the swarm architecture.
+ *
+ * toolHandlers: { [toolName]: async (args) => result }
+ *   - If a handler returns { __break: true, ...data }, the loop stops and data is returned.
+ *   - Otherwise the handler result is fed back to Claude as a tool result.
+ */
+async function chatAgent(systemPrompt, tools, messages, toolHandlers = {}, options = {}) {
+  const db = getDb();
+  const config = getConfig(db);
+  const { normalizeToolDefs } = require('./format');
+
+  const normalizedTools = normalizeToolDefs(tools);
+
+  const primaryProvider = config.llm_provider || process.env.LLM_PROVIDER || 'anthropic';
+  const temperature = parseFloat(config.temperature) || 0.3;
+  const maxTokens = parseInt(config.max_tokens, 10) || 1024;
+
+  const configModel = config.model_name;
+  const modelMatchesProvider =
+    (primaryProvider === 'anthropic' && configModel && configModel.startsWith('claude')) ||
+    (primaryProvider === 'openai' && configModel && (configModel.startsWith('gpt') || configModel.startsWith('o')));
+  const model = modelMatchesProvider ? configModel : DEFAULT_MODELS[primaryProvider];
+
+  const provider = providers[primaryProvider]();
+  let formattedMessages = provider.formatMessages([...messages]);
+
+  // Safety: Claude API requires messages to end with a user message.
+  // Strip trailing assistant messages to prevent 400 errors.
+  while (formattedMessages.length > 0 && formattedMessages[formattedMessages.length - 1].role === 'assistant') {
+    formattedMessages.pop();
+  }
+
+  // Safety: ensure messages alternate properly (no consecutive same-role messages).
+  // Merge consecutive same-role messages if found.
+  const deduped = [];
+  for (const msg of formattedMessages) {
+    if (deduped.length > 0 && deduped[deduped.length - 1].role === msg.role) {
+      const prev = deduped[deduped.length - 1];
+      if (typeof prev.content === 'string' && typeof msg.content === 'string') {
+        prev.content = prev.content + '\n\n' + msg.content;
+      }
+      continue;
+    }
+    deduped.push(msg);
+  }
+  formattedMessages = deduped;
+
+  let currentMessages = formattedMessages;
+  let finalText = '';
+  let routingResult = null;
+
+  for (let turn = 0; turn < MAX_TOOL_ROUNDS; turn++) {
+    const result = await provider.callModel({
+      model,
+      maxTokens,
+      temperature,
+      systemPrompt,
+      tools: normalizedTools,
+      messages: currentMessages,
+      timeout: TIMEOUT_MS,
+    });
+
+    if (result.text) {
+      finalText = result.text;
+    }
+
+    if (result.done) break;
+
+    // Log tool calls
+    if (options.onSystemEvent) {
+      const toolNames = result.toolCalls.map(t => t.name).join(', ');
+      options.onSystemEvent('tool_call', `Tool call: ${toolNames}`, {
+        tools: result.toolCalls.map(t => ({ name: t.name, input_keys: Object.keys(t.arguments || {}) })),
+      });
+    }
+
+    const processedResults = [];
+    let shouldBreak = false;
+
+    for (const toolCall of result.toolCalls) {
+      const handler = toolHandlers[toolCall.name];
+      if (!handler) {
+        processedResults.push({
+          toolCallId: toolCall.id,
+          content: JSON.stringify({ status: 'ok', message: `Tool ${toolCall.name} executed.` }),
+        });
+        continue;
+      }
+
+      const handlerResult = await handler(toolCall.arguments);
+
+      if (handlerResult && handlerResult.__break) {
+        routingResult = handlerResult;
+        shouldBreak = true;
+        // Still provide a tool result so the conversation is valid
+        processedResults.push({
+          toolCallId: toolCall.id,
+          content: JSON.stringify({ status: 'ok', message: handlerResult.message || 'Routing.' }),
+        });
+        break;
+      }
+
+      processedResults.push({
+        toolCallId: toolCall.id,
+        content: JSON.stringify(handlerResult),
+      });
+    }
+
+    if (shouldBreak) break;
+
+    const newMessages = provider.buildToolResultMessages(result.raw, processedResults);
+    currentMessages = [...currentMessages, ...newMessages];
+  }
+
+  return { text: finalText, routing: routingResult, provider: primaryProvider };
+}
+
+module.exports = { chat, chatAgent };

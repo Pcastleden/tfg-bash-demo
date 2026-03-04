@@ -56,12 +56,13 @@ function getConversationHistory(sessionId) {
  * @param {string} role - 'user' | 'assistant' | 'system'
  * @param {string} content - Text content
  * @param {*} [toolUse] - Raw tool_use content to store (for assistant messages with tool calls)
+ * @param {string} [agent] - Which agent generated this message (orchestrator, SOP-XXX, etc.)
  */
-function appendMessage(sessionId, role, content, toolUse = null) {
+function appendMessage(sessionId, role, content, toolUse = null, agent = null) {
   const db = getDb();
   db.prepare(`
-    INSERT INTO messages (session_id, role, content, tool_use) VALUES (?, ?, ?, ?)
-  `).run(sessionId, role, content, toolUse ? JSON.stringify(toolUse) : null);
+    INSERT INTO messages (session_id, role, content, tool_use, agent) VALUES (?, ?, ?, ?, ?)
+  `).run(sessionId, role, content, toolUse ? JSON.stringify(toolUse) : null, agent);
 
   db.prepare(`
     UPDATE sessions SET updated_at = datetime('now', '+2 hours') WHERE id = ?

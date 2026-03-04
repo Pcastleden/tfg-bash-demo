@@ -1,20 +1,25 @@
 const express = require('express');
 const router = express.Router();
-const { chat } = require('../services/claude');
+const { ChatRouter } = require('../services/chat-router');
 const {
   createSession,
   getSession,
-  getConversationHistory,
   appendMessage,
-  appendSystemEvent,
-  updateSession,
 } = require('../services/session');
-const { createHandoff } = require('../services/handoff');
+
+// Singleton ChatRouter instance
+let chatRouterInstance;
+function getChatRouter() {
+  if (!chatRouterInstance) {
+    chatRouterInstance = new ChatRouter();
+  }
+  return chatRouterInstance;
+}
 
 /**
  * POST /api/chat
  * Body: { session_id?: string, message: string }
- * Returns: { session_id, reply, handoff?: object }
+ * Returns: { session_id, reply, active_agent, handoff?: object }
  */
 router.post('/', async (req, res) => {
   try {
@@ -46,83 +51,19 @@ router.post('/', async (req, res) => {
     // Store user message
     appendMessage(sessionId, 'user', message.trim());
 
-    // Build conversation history for Claude
-    const history = getConversationHistory(sessionId);
-
-    // Tool handlers
-    let handoffResult = null;
-
-    // Track previous scenario so we can detect changes
-    const currentSession = getSession(sessionId);
-    const prevScenario = currentSession?.detected_scenario || null;
-
-    const handlers = {
-      onHandoff: async (input) => {
-        appendSystemEvent(sessionId, 'handoff_initiated',
-          `Handing off to support — ${input.scenario_name} (${input.sop_number}), reason: ${input.handover_reason}`,
-          { scenario_name: input.scenario_name, sop_number: input.sop_number, reason: input.handover_reason, priority: input.priority }
-        );
-        handoffResult = createHandoff(sessionId, input);
-        return handoffResult;
-      },
-      onUpdateSession: async (input) => {
-        // Log scenario detection / change
-        if (input.detected_scenario) {
-          const latest = getSession(sessionId);
-          const current = latest?.detected_scenario || prevScenario;
-          if (!current || current !== input.detected_scenario) {
-            const eventType = current ? 'scenario_changed' : 'scenario_detected';
-            const desc = current
-              ? `Scenario changed: ${current} → ${input.detected_scenario}`
-              : `Scenario detected: ${input.detected_scenario}`;
-            appendSystemEvent(sessionId, eventType, desc,
-              { previous: current || null, new: input.detected_scenario }
-            );
-          }
-        }
-
-        // Log data collection
-        const fields = [];
-        if (input.store_name) fields.push(`store_name: ${input.store_name}`);
-        if (input.branch_code) fields.push(`branch_code: ${input.branch_code}`);
-        if (input.staff_name) fields.push(`staff_name: ${input.staff_name}`);
-        if (input.additional_fields) {
-          for (const [k, v] of Object.entries(input.additional_fields)) {
-            fields.push(`${k}: ${v}`);
-          }
-        }
-        if (fields.length > 0) {
-          appendSystemEvent(sessionId, 'data_collected',
-            `Collected: ${fields.join(', ')}`,
-            { fields: input.additional_fields || {}, store_name: input.store_name, branch_code: input.branch_code, staff_name: input.staff_name }
-          );
-        }
-
-        return updateSession(sessionId, input);
-      },
-    };
-
-    // Call Claude
-    const options = {
-      onSystemEvent: (eventType, desc, data) => {
-        appendSystemEvent(sessionId, eventType, desc, data);
-      },
-    };
-    const { assistantMessage, toolResults } = await chat(history, handlers, options);
-
-    // Store assistant reply
-    if (assistantMessage) {
-      appendMessage(sessionId, 'assistant', assistantMessage);
-    }
+    // Route through swarm architecture
+    const swarmRouter = getChatRouter();
+    const result = await swarmRouter.chat(sessionId, message.trim());
 
     // Build response
     const response = {
       session_id: sessionId,
-      reply: assistantMessage,
+      reply: result.message,
+      active_agent: result.active_agent,
     };
 
-    if (handoffResult) {
-      response.handoff = handoffResult;
+    if (result.handoff) {
+      response.handoff = result.handoff;
     }
 
     res.json(response);

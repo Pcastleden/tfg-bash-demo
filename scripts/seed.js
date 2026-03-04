@@ -152,6 +152,121 @@ function runSeed(db) {
 
   const { scenarioCount, fieldCount } = seedScenarios();
   console.log(`[NOX] Seed — Scenarios: ${scenarioCount} (${fieldCount} fields)`);
+
+  // --- Seed SOP Mock Tools ---
+  const sopMockTools = [
+    {
+      scenario_sop: 'SOP-001',
+      tool_name: 'lookup_order',
+      display_name: 'Order Lookup',
+      description: 'Look up order status, tracking information, and courier details using the order number.',
+      tool_type: 'mock',
+      input_schema: JSON.stringify({
+        type: 'object',
+        properties: {
+          order_number: { type: 'string', description: 'Order number (format: B########-01)' }
+        },
+        required: ['order_number']
+      }),
+      configuration: JSON.stringify({
+        responses: [
+          { condition: "order_number contains '001'", data: { status: 'With courier', tracking_number: 'TCG-887321', courier: 'The Courier Guy', expected_delivery: '2-3 business days', last_update: '2025-01-15 09:30' } },
+          { condition: "order_number contains '002'", data: { status: 'Ready for collection', collection_point: 'Sandton City Bash Store', collection_deadline: '2025-01-20', last_update: '2025-01-14 14:00' } },
+          { condition: "order_number contains '003'", data: { status: 'Processing', estimated_dispatch: '1-2 business days', last_update: '2025-01-15 11:00' } },
+          { condition: 'default', data: { status: 'Not found', message: 'No order found with this number. Please verify the order number and try again.' } }
+        ]
+      })
+    },
+    {
+      scenario_sop: 'SOP-002',
+      tool_name: 'lookup_invoice',
+      display_name: 'Invoice Lookup',
+      description: 'Check if an invoice is available for an order and retrieve invoice details.',
+      tool_type: 'mock',
+      input_schema: JSON.stringify({
+        type: 'object',
+        properties: {
+          order_number: { type: 'string', description: 'Order number' }
+        },
+        required: ['order_number']
+      }),
+      configuration: JSON.stringify({
+        responses: [
+          { condition: "order_number contains '001'", data: { invoice_available: true, invoice_number: 'INV-2025-04821', amount: 'R 1,299.00', date: '2025-01-10', can_email: true } },
+          { condition: "order_number contains '002'", data: { invoice_available: false, reason: 'Split payment order — invoice generation requires manual processing', is_split_payment: true } },
+          { condition: 'default', data: { invoice_available: false, reason: 'Invoice not found for this order' } }
+        ]
+      })
+    },
+    {
+      scenario_sop: 'SOP-009',
+      tool_name: 'check_refund_status',
+      display_name: 'Refund Status Check',
+      description: 'Check the current status of a refund using the order number.',
+      tool_type: 'mock',
+      input_schema: JSON.stringify({
+        type: 'object',
+        properties: {
+          order_number: { type: 'string', description: 'Order number' }
+        },
+        required: ['order_number']
+      }),
+      configuration: JSON.stringify({
+        responses: [
+          { condition: "order_number contains '001'", data: { refund_status: 'Processed', amount: 'R 599.00', method: 'Credit card', processed_date: '2025-01-12', expected_in_account: '3-5 business days from processed date', reference: 'REF-2025-09921' } },
+          { condition: "order_number contains '002'", data: { refund_status: 'Pending', amount: 'R 1,299.00', method: 'EFT', submitted_date: '2025-01-14', expected_processing: '5-7 business days', reference: 'REF-2025-10032' } },
+          { condition: 'default', data: { refund_status: 'Not found', message: 'No refund record found for this order' } }
+        ]
+      })
+    },
+    {
+      scenario_sop: 'SOP-010',
+      tool_name: 'check_transaction',
+      display_name: 'Transaction Lookup',
+      description: 'Check whether an order was generated for a specific transaction.',
+      tool_type: 'mock',
+      input_schema: JSON.stringify({
+        type: 'object',
+        properties: {
+          amount: { type: 'string', description: 'Transaction amount in ZAR' },
+          payment_method: { type: 'string', description: 'Payment method used' },
+          transaction_date: { type: 'string', description: 'Date of transaction' }
+        },
+        required: ['amount']
+      }),
+      configuration: JSON.stringify({
+        responses: [
+          { condition: "amount contains '599'", data: { order_found: true, order_number: 'B10048823-01', status: 'Confirmed', amount: 'R 599.00' } },
+          { condition: 'default', data: { order_found: false, message: 'No matching order found. An auto-reversal may take 3-5 business days.', reversal_window: '3-5 business days' } }
+        ]
+      })
+    }
+  ];
+
+  const seedTools = db.transaction(() => {
+    const getScenarioId = db.prepare('SELECT id FROM scenarios WHERE sop_number = ?');
+    const upsertTool = db.prepare(`
+      INSERT INTO sop_tools (scenario_id, tool_name, display_name, description, tool_type, configuration, input_schema)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT DO NOTHING
+    `);
+    // Check if tool already exists before inserting
+    const checkTool = db.prepare('SELECT id FROM sop_tools WHERE scenario_id = ? AND tool_name = ?');
+
+    let toolCount = 0;
+    for (const tool of sopMockTools) {
+      const row = getScenarioId.get(tool.scenario_sop);
+      if (!row) continue;
+      const existing = checkTool.get(row.id, tool.tool_name);
+      if (existing) continue;
+      upsertTool.run(row.id, tool.tool_name, tool.display_name, tool.description, tool.tool_type, tool.configuration, tool.input_schema);
+      toolCount++;
+    }
+    return toolCount;
+  });
+
+  const toolCount = seedTools();
+  console.log(`[NOX] Seed — SOP Tools: ${toolCount} mock tools`);
 }
 
 // --- Standalone execution ---

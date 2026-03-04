@@ -319,7 +319,13 @@ router.delete('/scenarios/fields/:fieldId', safe((req, res) => {
 router.get('/prompt-preview', safe((req, res) => {
   const db = getDb();
   const prompt = buildSystemPrompt(db);
-  res.json({ prompt });
+
+  // Also provide orchestrator and sample SOP agent prompts
+  const { Orchestrator } = require('../services/orchestrator');
+  const orchestrator = new Orchestrator(db);
+  const orchestratorPrompt = orchestrator.buildPrompt();
+
+  res.json({ prompt, orchestratorPrompt });
 }));
 
 // ────────────────────────────────────
@@ -410,6 +416,113 @@ router.get('/handoffs', safe((req, res) => {
 }));
 
 // ────────────────────────────────────
+// SOP Tools (Swarm Architecture)
+// ────────────────────────────────────
+
+/** GET /api/admin/scenarios/:id/tools — list tools for a scenario */
+router.get('/scenarios/:id/tools', safe((req, res) => {
+  const db = getDb();
+  const scenario = db.prepare('SELECT id FROM scenarios WHERE id = ?').get(req.params.id);
+  if (!scenario) return res.status(404).json({ error: 'Scenario not found' });
+  const tools = db.prepare('SELECT * FROM sop_tools WHERE scenario_id = ? ORDER BY id').all(req.params.id);
+  res.json(tools);
+}));
+
+/** POST /api/admin/scenarios/:id/tools — create a tool */
+router.post('/scenarios/:id/tools', safe((req, res) => {
+  const db = getDb();
+  const scenario = db.prepare('SELECT id FROM scenarios WHERE id = ?').get(req.params.id);
+  if (!scenario) return res.status(404).json({ error: 'Scenario not found' });
+
+  const { tool_name, display_name, description, tool_type, configuration, input_schema } = req.body;
+  if (!tool_name || !display_name || !description || !tool_type || !configuration || !input_schema) {
+    return res.status(400).json({ error: 'tool_name, display_name, description, tool_type, configuration, and input_schema are required' });
+  }
+
+  const configStr = typeof configuration === 'string' ? configuration : JSON.stringify(configuration);
+  const schemaStr = typeof input_schema === 'string' ? input_schema : JSON.stringify(input_schema);
+
+  const result = db.prepare(`
+    INSERT INTO sop_tools (scenario_id, tool_name, display_name, description, tool_type, configuration, input_schema)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(req.params.id, tool_name, display_name, description, tool_type, configStr, schemaStr);
+
+  res.status(201).json({ id: result.lastInsertRowid, ok: true });
+}));
+
+/** PUT /api/admin/tools/:id — update a tool */
+router.put('/tools/:id', safe((req, res) => {
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM sop_tools WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Tool not found' });
+
+  const { display_name, description, tool_type, configuration, input_schema, enabled } = req.body;
+
+  const configStr = configuration !== undefined
+    ? (typeof configuration === 'string' ? configuration : JSON.stringify(configuration))
+    : existing.configuration;
+  const schemaStr = input_schema !== undefined
+    ? (typeof input_schema === 'string' ? input_schema : JSON.stringify(input_schema))
+    : existing.input_schema;
+
+  db.prepare(`
+    UPDATE sop_tools SET display_name = ?, description = ?, tool_type = ?, configuration = ?, input_schema = ?, enabled = ?
+    WHERE id = ?
+  `).run(
+    display_name !== undefined ? display_name : existing.display_name,
+    description !== undefined ? description : existing.description,
+    tool_type !== undefined ? tool_type : existing.tool_type,
+    configStr,
+    schemaStr,
+    enabled !== undefined ? (enabled ? 1 : 0) : existing.enabled,
+    req.params.id
+  );
+  res.json({ ok: true });
+}));
+
+/** DELETE /api/admin/tools/:id */
+router.delete('/tools/:id', safe((req, res) => {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM sop_tools WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Tool not found' });
+  res.json({ ok: true });
+}));
+
+/** POST /api/admin/tools/:id/test — test a mock tool with sample input */
+router.post('/tools/:id/test', safe((req, res) => {
+  const db = getDb();
+  const tool = db.prepare('SELECT * FROM sop_tools WHERE id = ?').get(req.params.id);
+  if (!tool) return res.status(404).json({ error: 'Tool not found' });
+
+  const input = req.body.input || {};
+
+  if (tool.tool_type === 'mock') {
+    const config = JSON.parse(tool.configuration);
+    const responses = config.responses || [];
+
+    for (const resp of responses) {
+      if (resp.condition === 'default') continue;
+      const match = resp.condition.match(/^(\w+)\s+(contains|starts with|equals)\s+'([^']+)'$/i);
+      if (!match) continue;
+      const [, field, op, value] = match;
+      const inputValue = String(input[field] || '');
+      let passes = false;
+      switch (op.toLowerCase()) {
+        case 'contains': passes = inputValue.includes(value); break;
+        case 'starts with': passes = inputValue.startsWith(value); break;
+        case 'equals': passes = inputValue === value; break;
+      }
+      if (passes) return res.json({ matched_condition: resp.condition, data: resp.data });
+    }
+
+    const defaultResp = responses.find(r => r.condition === 'default');
+    return res.json({ matched_condition: 'default', data: defaultResp ? defaultResp.data : null });
+  }
+
+  res.json({ error: 'Only mock tools can be tested in the admin panel' });
+}));
+
+// ────────────────────────────────────
 // Dashboard stats
 // ────────────────────────────────────
 
@@ -437,8 +550,25 @@ router.get('/stats', safe((req, res) => {
 
   const recentSessions = db.prepare(`
     SELECT s.id, s.status, s.detected_scenario, s.store_name, s.branch_code, s.created_at,
+      s.active_agent,
       (SELECT COUNT(*) FROM messages WHERE session_id = s.id) as message_count
     FROM sessions s ORDER BY s.created_at DESC LIMIT 10
+  `).all();
+
+  // Swarm architecture stats
+  const agentRoutingStats = db.prepare(`
+    SELECT agent, COUNT(*) as count FROM messages
+    WHERE role = 'assistant' AND agent IS NOT NULL
+    GROUP BY agent ORDER BY count DESC
+  `).all();
+
+  const toolUsageStats = db.prepare(`
+    SELECT st.tool_name, st.display_name, sc.sop_number, COUNT(m.id) as usage_count
+    FROM sop_tools st
+    LEFT JOIN scenarios sc ON sc.id = st.scenario_id
+    LEFT JOIN messages m ON m.tool_use LIKE '%' || st.tool_name || '%' AND m.role = 'system'
+    GROUP BY st.id
+    ORDER BY usage_count DESC
   `).all();
 
   res.json({
@@ -449,6 +579,8 @@ router.get('/stats', safe((req, res) => {
     sessionsByCategory,
     topScenarios,
     recentSessions,
+    agentRoutingStats,
+    toolUsageStats,
   });
 }));
 

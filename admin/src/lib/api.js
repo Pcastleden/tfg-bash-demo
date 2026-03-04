@@ -91,6 +91,13 @@ export const getPromptPreview = () => request('/prompt-preview');
 // Config Reset
 export const resetConfig = () => request('/config/reset', { method: 'POST' });
 
+// SOP Tools (Swarm Architecture)
+export const getScenarioTools = (scenarioId) => request(`/scenarios/${scenarioId}/tools`);
+export const createScenarioTool = (scenarioId, data) => request(`/scenarios/${scenarioId}/tools`, { method: 'POST', body: data });
+export const updateTool = (toolId, data) => request(`/tools/${toolId}`, { method: 'PUT', body: data });
+export const deleteTool = (toolId) => request(`/tools/${toolId}`, { method: 'DELETE' });
+export const testTool = (toolId, input) => request(`/tools/${toolId}/test`, { method: 'POST', body: { input } });
+
 // Chat Test (uses main chat endpoint, not admin)
 export const testChat = async (sessionId, message) => {
   const res = await fetch('/api/chat', {

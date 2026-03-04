@@ -22,6 +22,9 @@ const EVENT_STYLES = {
   data_collected: 'border-sky-500/40 bg-sky-500/5 text-sky-400',
   handoff_initiated: 'border-orange-500/40 bg-orange-500/5 text-orange-400',
   tool_call: 'border-violet-500/40 bg-violet-500/5 text-violet-400',
+  agent_routed: 'border-indigo-500/40 bg-indigo-500/5 text-indigo-400',
+  agent_returned: 'border-cyan-500/40 bg-cyan-500/5 text-cyan-400',
+  provider_fallback: 'border-rose-500/40 bg-rose-500/5 text-rose-400',
   default: 'border-nox-border bg-nox-surface-2/50 text-nox-text-muted',
 };
 
@@ -31,6 +34,13 @@ const EVENT_LABELS = {
   data_collected: 'Data Collected',
   handoff_initiated: 'Handoff',
   tool_call: 'Tool Call',
+  agent_routed: 'Agent Routed',
+  agent_returned: 'Agent Returned',
+  provider_fallback: 'Provider Fallback',
+};
+
+const AGENT_COLORS = {
+  orchestrator: 'text-indigo-400',
 };
 
 export default function Sessions() {
@@ -195,7 +205,7 @@ export default function Sessions() {
             {/* Session info */}
             {transcript && !loadingTranscript && (
               <div className="px-5 py-3 border-b border-nox-border flex-shrink-0">
-                <div className="grid grid-cols-3 gap-3 text-xs">
+                <div className="grid grid-cols-4 gap-3 text-xs">
                   <div>
                     <span className="text-nox-text-muted">Status</span>
                     <div className="mt-0.5">
@@ -203,6 +213,10 @@ export default function Sessions() {
                         {STATUS_LABELS[transcript.status]}
                       </span>
                     </div>
+                  </div>
+                  <div>
+                    <span className="text-nox-text-muted">Active Agent</span>
+                    <p className="text-nox-text mt-0.5 font-mono text-[11px]">{transcript.active_agent || 'orchestrator'}</p>
                   </div>
                   <div>
                     <span className="text-nox-text-muted">Scenario</span>
@@ -251,15 +265,37 @@ export default function Sessions() {
                     </div>
                   );
                 }
+                // Show agent transition divider when agent changes
+                const prevMsg = transcript.messages[i - 1];
+                const showAgentDivider = msg.role === 'assistant' && msg.agent &&
+                  prevMsg && (prevMsg.agent !== msg.agent || prevMsg.role === 'user');
+                const agentLabel = msg.agent && msg.agent !== 'orchestrator' ? msg.agent : msg.agent === 'orchestrator' ? 'Orchestrator' : null;
+
                 return (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
-                      msg.role === 'user'
-                        ? 'bg-nox-accent text-white'
-                        : 'bg-nox-bg text-nox-text'
-                    }`}>
-                      <span className="whitespace-pre-wrap">{msg.content}</span>
-                      <div className="text-[10px] opacity-50 mt-1">{formatTime(msg.created_at)}</div>
+                  <div key={i}>
+                    {showAgentDivider && msg.agent && (
+                      <div className="flex items-center gap-2 my-2">
+                        <div className="flex-1 h-px bg-indigo-500/20" />
+                        <span className="text-[10px] font-mono text-indigo-400 uppercase tracking-wider">{msg.agent === 'orchestrator' ? 'Orchestrator' : msg.agent}</span>
+                        <div className="flex-1 h-px bg-indigo-500/20" />
+                      </div>
+                    )}
+                    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
+                        msg.role === 'user'
+                          ? 'bg-nox-accent text-white'
+                          : 'bg-nox-bg text-nox-text'
+                      }`}>
+                        <span className="whitespace-pre-wrap">{msg.content}</span>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] opacity-50">{formatTime(msg.created_at)}</span>
+                          {agentLabel && msg.role === 'assistant' && (
+                            <span className={`text-[10px] font-mono opacity-60 ${AGENT_COLORS[msg.agent] || 'text-cyan-400'}`}>
+                              {agentLabel}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );

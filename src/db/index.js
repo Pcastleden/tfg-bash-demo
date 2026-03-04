@@ -28,6 +28,23 @@ function getDb() {
     if (!handoffCols.includes('staff_name')) {
       db.exec('ALTER TABLE handoffs ADD COLUMN staff_name TEXT');
     }
+
+    // Swarm architecture migrations
+    const sessionCols = db.prepare("PRAGMA table_info(sessions)").all().map(c => c.name);
+    if (!sessionCols.includes('active_agent')) {
+      db.exec("ALTER TABLE sessions ADD COLUMN active_agent TEXT DEFAULT 'orchestrator'");
+    }
+    if (!sessionCols.includes('agent_history')) {
+      db.exec("ALTER TABLE sessions ADD COLUMN agent_history TEXT DEFAULT '[]'");
+    }
+    if (!sessionCols.includes('context_snapshot')) {
+      db.exec("ALTER TABLE sessions ADD COLUMN context_snapshot TEXT DEFAULT '{}'");
+    }
+
+    const messageCols = db.prepare("PRAGMA table_info(messages)").all().map(c => c.name);
+    if (!messageCols.includes('agent')) {
+      db.exec("ALTER TABLE messages ADD COLUMN agent TEXT DEFAULT 'orchestrator'");
+    }
   }
   return db;
 }
@@ -92,6 +109,29 @@ function getScenarioByName(name) {
   return scenario;
 }
 
+function getScenarioBySOP(sopNumber, database) {
+  const d = database || getDb();
+  const scenario = d.prepare('SELECT * FROM scenarios WHERE sop_number = ? AND enabled = 1').get(sopNumber);
+  if (scenario) {
+    scenario.fields = d.prepare(
+      'SELECT * FROM scenario_fields WHERE scenario_id = ? ORDER BY sort_order, id'
+    ).all(scenario.id);
+  }
+  return scenario;
+}
+
+// --- SOP Tools helpers ---
+
+function getSOPTools(scenarioId, database) {
+  const d = database || getDb();
+  return d.prepare('SELECT * FROM sop_tools WHERE scenario_id = ? AND enabled = 1').all(scenarioId);
+}
+
+function getSOPTool(scenarioId, toolName, database) {
+  const d = database || getDb();
+  return d.prepare('SELECT * FROM sop_tools WHERE scenario_id = ? AND tool_name = ? AND enabled = 1').get(scenarioId, toolName);
+}
+
 module.exports = {
   getDb,
   getConfig,
@@ -100,4 +140,7 @@ module.exports = {
   getActiveToneRules,
   getActiveScenarios,
   getScenarioByName,
+  getScenarioBySOP,
+  getSOPTools,
+  getSOPTool,
 };

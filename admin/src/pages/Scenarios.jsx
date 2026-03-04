@@ -6,6 +6,11 @@ import {
   updateScenario,
   createScenarioField,
   deleteScenarioField,
+  getScenarioTools,
+  createScenarioTool,
+  updateTool,
+  deleteTool,
+  testTool,
 } from '../lib/api';
 
 const CATEGORIES = [
@@ -341,6 +346,65 @@ function ScenarioCard({
   onToggleExpand, onToggleEnabled, onStartEdit, onCancelEdit, onSaveEdit, onEditChange,
   onPromptPreview, onStartAddField, onCancelAddField, onNewFieldChange, onAddField, onDeleteField,
 }) {
+  const [activeTab, setActiveTab] = useState('details');
+  const [tools, setTools] = useState([]);
+  const [toolsLoaded, setToolsLoaded] = useState(false);
+  const [addingTool, setAddingTool] = useState(false);
+  const [newTool, setNewTool] = useState({ tool_name: '', display_name: '', description: '', tool_type: 'mock', configuration: '{}', input_schema: '{}' });
+  const [testingToolId, setTestingToolId] = useState(null);
+  const [testInput, setTestInput] = useState('{}');
+  const [testResult, setTestResult] = useState(null);
+  const [toolSaving, setToolSaving] = useState(false);
+
+  const loadTools = async () => {
+    try {
+      const data = await getScenarioTools(scenario.id);
+      setTools(data);
+      setToolsLoaded(true);
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    if (expanded && activeTab === 'tools' && !toolsLoaded) {
+      loadTools();
+    }
+  }, [expanded, activeTab]);
+
+  const handleAddTool = async () => {
+    if (!newTool.tool_name || !newTool.display_name || !newTool.description) return;
+    setToolSaving(true);
+    try {
+      await createScenarioTool(scenario.id, {
+        ...newTool,
+        configuration: typeof newTool.configuration === 'string' ? newTool.configuration : JSON.stringify(newTool.configuration),
+        input_schema: typeof newTool.input_schema === 'string' ? newTool.input_schema : JSON.stringify(newTool.input_schema),
+      });
+      setAddingTool(false);
+      setNewTool({ tool_name: '', display_name: '', description: '', tool_type: 'mock', configuration: '{}', input_schema: '{}' });
+      loadTools();
+    } catch (e) { console.error(e); }
+    finally { setToolSaving(false); }
+  };
+
+  const handleDeleteTool = async (toolId) => {
+    if (!confirm('Delete this tool?')) return;
+    try { await deleteTool(toolId); loadTools(); }
+    catch (e) { console.error(e); }
+  };
+
+  const handleToggleTool = async (tool) => {
+    try { await updateTool(tool.id, { enabled: !tool.enabled }); loadTools(); }
+    catch (e) { console.error(e); }
+  };
+
+  const handleTestTool = async (toolId) => {
+    try {
+      const input = JSON.parse(testInput);
+      const result = await testTool(toolId, input);
+      setTestResult(result);
+    } catch (e) { setTestResult({ error: e.message }); }
+  };
+
   const statusColor = scenario.build_status === 'full'
     ? 'bg-nox-success/20 text-nox-success'
     : 'bg-nox-warning/20 text-nox-warning';
@@ -375,8 +439,19 @@ function ScenarioCard({
       {/* Expanded content */}
       {expanded && (
         <div className="border-t border-nox-border px-4 py-4 space-y-4">
+          {/* Tab selector */}
+          <div className="flex gap-1 border-b border-nox-border pb-2">
+            <TabBtn active={activeTab === 'details'} onClick={() => setActiveTab('details')}>Details</TabBtn>
+            <TabBtn active={activeTab === 'fields'} onClick={() => setActiveTab('fields')}>Fields</TabBtn>
+            <TabBtn active={activeTab === 'tools'} onClick={() => { setActiveTab('tools'); if (!toolsLoaded) loadTools(); }}>
+              Tools {tools.length > 0 ? `(${tools.length})` : ''}
+            </TabBtn>
+          </div>
+
           <p className="text-sm text-nox-text-muted">{scenario.description}</p>
 
+          {activeTab === 'details' && (
+            <>
           <div className="flex gap-2">
             {!editing && <SmallBtn onClick={onStartEdit}>Edit Scenario</SmallBtn>}
             <SmallBtn onClick={onPromptPreview} variant="ghost">Preview Prompt</SmallBtn>
@@ -449,7 +524,11 @@ function ScenarioCard({
             </div>
           )}
 
-          {/* Fields */}
+          </>
+          )}
+
+          {/* Fields Tab */}
+          {activeTab === 'fields' && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-semibold text-nox-text-muted uppercase tracking-wider">Fields</h3>
@@ -502,6 +581,102 @@ function ScenarioCard({
               </div>
             )}
           </div>
+          )}
+
+          {/* Tools Tab */}
+          {activeTab === 'tools' && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-nox-text-muted uppercase tracking-wider">SOP Tools</h3>
+              {!addingTool && <SmallBtn onClick={() => setAddingTool(true)} variant="ghost" size="xs">+ Add Tool</SmallBtn>}
+            </div>
+
+            {tools.length === 0 && !addingTool && (
+              <p className="text-xs text-nox-text-muted bg-nox-bg rounded-lg px-3 py-4 text-center">
+                No tools registered for this SOP. Tools let the agent look up data, check statuses, and perform actions.
+              </p>
+            )}
+
+            <div className="space-y-2">
+              {tools.map(tool => (
+                <div key={tool.id} className="bg-nox-bg rounded-lg px-3 py-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <ToolIcon className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+                    <span className="text-sm text-nox-text font-medium flex-1">{tool.display_name}</span>
+                    <span className="text-[11px] font-mono text-nox-text-muted">{tool.tool_name}</span>
+                    <span className={`text-[11px] px-1.5 py-0.5 rounded ${tool.tool_type === 'mock' ? 'bg-violet-500/10 text-violet-400' : tool.tool_type === 'api_call' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-nox-surface-2 text-nox-text-muted'}`}>
+                      {tool.tool_type}
+                    </span>
+                    <button
+                      onClick={() => handleToggleTool(tool)}
+                      className={`w-7 h-4 rounded-full transition-colors relative flex-shrink-0 ${tool.enabled ? 'bg-nox-accent' : 'bg-nox-surface-2'}`}
+                    >
+                      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${tool.enabled ? 'left-[13px]' : 'left-0.5'}`} />
+                    </button>
+                    <button onClick={() => handleDeleteTool(tool.id)} className="text-nox-text-muted hover:text-nox-danger transition-colors p-0.5">
+                      <XIcon className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-nox-text-muted">{tool.description}</p>
+
+                  {/* Test tool */}
+                  {testingToolId === tool.id ? (
+                    <div className="space-y-2 pt-1 border-t border-nox-border">
+                      <label className="block text-[11px] text-nox-text-muted">Test Input (JSON)</label>
+                      <textarea
+                        value={testInput}
+                        onChange={e => setTestInput(e.target.value)}
+                        rows={2}
+                        className="w-full bg-nox-surface border border-nox-border rounded-lg px-2 py-1.5 text-xs text-nox-text font-mono resize-y"
+                        placeholder='{"order_number": "B001"}'
+                      />
+                      <div className="flex gap-2">
+                        <SmallBtn onClick={() => handleTestTool(tool.id)} size="xs">Run Test</SmallBtn>
+                        <SmallBtn onClick={() => { setTestingToolId(null); setTestResult(null); }} variant="ghost" size="xs">Close</SmallBtn>
+                      </div>
+                      {testResult && (
+                        <pre className="text-[11px] text-nox-text-muted font-mono bg-nox-surface rounded-lg p-2 whitespace-pre-wrap overflow-auto max-h-40">
+                          {JSON.stringify(testResult, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  ) : (
+                    <SmallBtn onClick={() => { setTestingToolId(tool.id); setTestInput('{}'); setTestResult(null); }} variant="ghost" size="xs">Test Tool</SmallBtn>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Add tool form */}
+            {addingTool && (
+              <div className="mt-2 bg-nox-bg rounded-lg p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <InputField label="Tool Name (key)" value={newTool.tool_name} onChange={v => setNewTool(t => ({ ...t, tool_name: v }))} placeholder="e.g. lookup_order" size="sm" />
+                  <InputField label="Display Name" value={newTool.display_name} onChange={v => setNewTool(t => ({ ...t, display_name: v }))} placeholder="e.g. Order Lookup" size="sm" />
+                </div>
+                <InputField label="Description" hint="Shown to the LLM so it knows when to use this tool." value={newTool.description} onChange={v => setNewTool(t => ({ ...t, description: v }))} textarea placeholder="Look up order status..." size="sm" />
+                <div>
+                  <label className="block text-xs text-nox-text-muted mb-0.5">Tool Type</label>
+                  <select
+                    value={newTool.tool_type}
+                    onChange={e => setNewTool(t => ({ ...t, tool_type: e.target.value }))}
+                    className="bg-nox-surface border border-nox-border rounded-lg px-2 py-1 text-xs text-nox-text"
+                  >
+                    <option value="mock">Mock (simulated)</option>
+                    <option value="api_call">API Call</option>
+                    <option value="indexify">Indexify (future)</option>
+                  </select>
+                </div>
+                <InputField label="Input Schema (JSON)" value={newTool.input_schema} onChange={v => setNewTool(t => ({ ...t, input_schema: v }))} textarea placeholder='{"type":"object","properties":{"order_number":{"type":"string"}},"required":["order_number"]}' size="sm" />
+                <InputField label="Configuration (JSON)" value={newTool.configuration} onChange={v => setNewTool(t => ({ ...t, configuration: v }))} textarea placeholder='{"responses":[{"condition":"default","data":{"status":"ok"}}]}' size="sm" />
+                <div className="flex gap-2">
+                  <SmallBtn onClick={handleAddTool} size="xs" disabled={toolSaving}>{toolSaving ? 'Adding...' : 'Add Tool'}</SmallBtn>
+                  <SmallBtn onClick={() => setAddingTool(false)} variant="ghost" size="xs">Cancel</SmallBtn>
+                </div>
+              </div>
+            )}
+          </div>
+          )}
         </div>
       )}
     </div>
@@ -597,6 +772,14 @@ function XIcon({ className }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function ToolIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
     </svg>
   );
 }
